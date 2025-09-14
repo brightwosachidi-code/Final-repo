@@ -1,8 +1,8 @@
-
 // server.js
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
+import fetch from "node-fetch";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,22 +11,21 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static("public"));
 
-// Hugging Face API token from environment variable
-const HF_TOKEN = process.env.HF_TOKEN;
+// Hugging Face token (set in Render Environment Variables as HF_TOKEN)
+const HF_API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5";
 
-// POST route to generate image
 app.post("/generate", async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: "Prompt is required" });
 
     try {
-        const response = await fetch("https://api-inference.huggingface.co/models/prompthero/openjourney", {
+        const response = await fetch(HF_API_URL, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${HF_TOKEN}`,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${process.env.HF_TOKEN}`,
             },
-            body: JSON.stringify({ inputs: prompt })
+            body: JSON.stringify({ inputs: prompt }),
         });
 
         if (!response.ok) {
@@ -34,12 +33,18 @@ app.post("/generate", async (req, res) => {
             throw new Error(errData.error || "Failed to generate image");
         }
 
-        const buffer = await response.arrayBuffer();
+        const result = await response.json();
+
+        const base64 = result[0]?.b64_json || result.data?.[0]?.b64_json;
+        if (!base64) throw new Error("No image data received");
+
+        const imgBuffer = Buffer.from(base64, "base64");
+
         res.writeHead(200, {
             "Content-Type": "image/png",
-            "Content-Length": buffer.byteLength
+            "Content-Length": imgBuffer.length,
         });
-        res.end(Buffer.from(buffer));
+        res.end(imgBuffer);
 
     } catch (err) {
         console.error(err);
@@ -48,5 +53,5 @@ app.post("/generate", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`✅ Server running at http://localhost:${PORT}`);
 });
